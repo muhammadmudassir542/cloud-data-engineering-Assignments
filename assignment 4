@@ -1,0 +1,238 @@
+-- ============================================================
+--  SECTION A — SET OPERATORS
+-- ============================================================
+
+-- Q1.
+-- Unified contact list of staff and customers
+
+SELECT 
+    CONCAT(first_name, ' ', last_name) AS full_name,
+    email
+FROM sales.staffs
+
+UNION
+
+SELECT 
+    CONCAT(first_name, ' ', last_name) AS full_name,
+    email
+FROM sales.customers;
+
+
+
+-- Q2.
+-- States having BOTH stores and customers
+
+SELECT state
+FROM sales.stores
+
+INTERSECT
+
+SELECT state
+FROM sales.customers;
+
+
+
+-- Q3.
+-- Stores with zero orders in 2018
+
+SELECT store_id
+FROM sales.stores
+
+EXCEPT
+
+SELECT DISTINCT store_id
+FROM sales.orders
+WHERE YEAR(order_date) = 2018;
+
+
+
+-- ============================================================
+--  SECTION B — CTEs
+-- ============================================================
+
+-- Q4.
+-- Products priced above their category average
+
+WITH category_avg AS (
+    SELECT 
+        category_id,
+        AVG(list_price) AS avg_price
+    FROM production.products
+    GROUP BY category_id
+)
+
+SELECT 
+    p.category_id,
+    p.product_name,
+    p.list_price,
+    ca.avg_price
+FROM production.products p
+JOIN category_avg ca
+    ON p.category_id = ca.category_id
+WHERE p.list_price > ca.avg_price;
+
+
+
+-- Q5.
+-- Staff members with above-average order count
+
+WITH staff_orders AS (
+    SELECT 
+        staff_id,
+        COUNT(*) AS order_count
+    FROM sales.orders
+    GROUP BY staff_id
+),
+avg_orders AS (
+    SELECT AVG(order_count) AS avg_count
+    FROM staff_orders
+)
+
+SELECT 
+    so.staff_id,
+    so.order_count
+FROM staff_orders so
+CROSS JOIN avg_orders ao
+WHERE so.order_count > ao.avg_count;
+
+
+
+-- Q6.
+-- Store yearly revenue greater than $1,000,000
+
+WITH yearly_revenue AS (
+    SELECT 
+        o.store_id,
+        YEAR(o.order_date) AS year,
+        SUM(oi.quantity * oi.list_price * (1 - oi.discount)) AS total_revenue
+    FROM sales.orders o
+    JOIN sales.order_items oi
+        ON o.order_id = oi.order_id
+    GROUP BY o.store_id, YEAR(o.order_date)
+)
+
+SELECT 
+    store_id,
+    year,
+    total_revenue
+FROM yearly_revenue
+WHERE total_revenue > 1000000;
+
+
+
+-- ============================================================
+--  SECTION C — CONSTRAINTS (DDL)
+-- ============================================================
+
+-- Q7.
+-- Loyalty cards table with constraints
+
+CREATE TABLE sales.loyalty_cards (
+    card_number INT PRIMARY KEY,
+
+    customer_id INT,
+
+    points INT
+        CHECK (points >= 0),
+
+    tier VARCHAR(10)
+        CHECK (tier IN ('Bronze', 'Silver', 'Gold')),
+
+    join_date DATE NOT NULL,
+
+    CONSTRAINT fk_loyalty_customer
+    FOREIGN KEY (customer_id)
+    REFERENCES sales.customers(customer_id)
+    ON DELETE CASCADE
+);
+
+
+-- Valid inserts
+
+INSERT INTO sales.loyalty_cards 
+VALUES (1001, 1, 500, 'Gold', '2024-01-15');
+
+INSERT INTO sales.loyalty_cards 
+VALUES (1002, 2, 150, 'Silver', '2024-03-22');
+
+INSERT INTO sales.loyalty_cards 
+VALUES (1003, 3, 0, 'Bronze', '2024-06-01');
+
+
+-- Invalid inserts (should fail)
+
+INSERT INTO sales.loyalty_cards 
+VALUES (1001, 4, 100, 'Gold', '2024-07-01');
+
+INSERT INTO sales.loyalty_cards 
+VALUES (1004, 1, -50, 'Silver', '2024-08-01');
+
+INSERT INTO sales.loyalty_cards 
+VALUES (1005, 5, 200, 'Diamond', '2024-09-01');
+
+
+
+-- Q8.
+-- Add shipped_date validation constraint
+
+ALTER TABLE test_orders
+ADD CONSTRAINT chk_shipping_date
+CHECK (
+    shipped_date IS NULL
+    OR shipped_date >= order_date
+);
+
+
+-- Invalid insert (should fail)
+
+INSERT INTO test_orders
+VALUES (4, '2024-04-10', '2024-04-08');
+
+
+-- Valid insert (should pass)
+
+INSERT INTO test_orders
+VALUES (5, '2024-04-10', '2024-04-15');
+
+
+
+-- ============================================================
+--  SECTION D — CASE EXPRESSIONS
+-- ============================================================
+
+-- Q9.
+-- Shipping speed categories
+
+SELECT 
+    order_id,
+    order_date,
+    shipped_date,
+
+    CASE
+        WHEN shipped_date IS NULL THEN 'Pending'
+        WHEN DATEDIFF(day, order_date, shipped_date) <= 2 THEN 'Fast'
+        WHEN DATEDIFF(day, order_date, shipped_date) BETWEEN 3 AND 5 THEN 'Normal'
+        ELSE 'Delayed'
+    END AS shipping_speed
+
+FROM sales.orders;
+
+
+
+-- Q10.
+-- Stock level labels
+
+SELECT 
+    store_id,
+    product_id,
+    quantity,
+
+    CASE
+        WHEN quantity = 0 THEN 'Out of Stock'
+        WHEN quantity BETWEEN 1 AND 10 THEN 'Low Stock'
+        WHEN quantity BETWEEN 11 AND 50 THEN 'Sufficient'
+        ELSE 'Well Stocked'
+    END AS stock_status
+
+FROM production.stocks
+ORDER BY store_id, quantity ASC;
